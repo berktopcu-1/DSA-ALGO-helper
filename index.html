@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSA &amp; Algo Helper — Your Personal Problem Vault</title>
+  <meta name="description" content="Track your LeetCode solutions, approach notes, tags, and confidence ratings all in one place." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <!-- Highlight.js – atom-one-dark theme (great for Java) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Animated background -->
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- ─── SIDEBAR ────────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <div class="logo-text">DSA<span class="logo-accent">Vault</span></div>
+      </div>
+      <button class="hamburger" id="sidebarToggle" aria-label="Toggle sidebar">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-view="dashboard">
+        <span class="nav-icon">📊</span><span class="nav-label">Dashboard</span>
+      </button>
+      <button class="nav-item" data-view="problems">
+        <span class="nav-icon">🧩</span><span class="nav-label">Problems</span>
+      </button>
+      <button class="nav-item" data-view="add">
+        <span class="nav-icon">➕</span><span class="nav-label">Add Problem</span>
+      </button>
+      <button class="nav-item" data-view="revisit">
+        <span class="nav-icon">🔁</span><span class="nav-label">Revisit List</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-stats">
+        <div class="stat-chip">
+          <span class="stat-num" id="sidebarTotal">0</span>
+          <span class="stat-lbl">Total</span>
+        </div>
+        <div class="stat-chip easy">
+          <span class="stat-num" id="sidebarEasy">0</span>
+          <span class="stat-lbl">Easy</span>
+        </div>
+        <div class="stat-chip medium">
+          <span class="stat-num" id="sidebarMedium">0</span>
+          <span class="stat-lbl">Med</span>
+        </div>
+        <div class="stat-chip hard">
+          <span class="stat-num" id="sidebarHard">0</span>
+          <span class="stat-lbl">Hard</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ─── MAIN ────────────────────────────────────────────────── -->
+  <main class="main" id="main">
+
+    <!-- ── DASHBOARD ── -->
+    <section class="view active" id="viewDashboard">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Dashboard</h1>
+          <p class="page-sub">Your DSA journey at a glance</p>
+        </div>
+        <button class="btn-primary pulse-btn" data-view="add" id="quickAddBtn">+ Add Problem</button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card glass">
+          <div class="stat-card-icon">🧩</div>
+          <div class="stat-card-val" id="dashTotal">0</div>
+          <div class="stat-card-lbl">Problems Solved</div>
+          <div class="stat-card-bar"><div class="stat-bar-fill" id="dashTotalBar" style="width:100%;background:var(--accent)"></div></div>
+        </div>
+        <div class="stat-card glass easy-glow">
+          <div class="stat-card-icon">🟢</div>
+          <div class="stat-card-val" id="dashEasy">0</div>
+          <div class="stat-card-lbl">Easy</div>
+          <div class="stat-card-bar"><div class="stat-bar-fill easy-fill" id="dashEasyBar"></div></div>
+        </div>
+        <div class="stat-card glass medium-glow">
+          <div class="stat-card-icon">🟡</div>
+          <div class="stat-card-val" id="dashMed">0</div>
+          <div class="stat-card-lbl">Medium</div>
+          <div class="stat-card-bar"><div class="stat-bar-fill medium-fill" id="dashMedBar"></div></div>
+        </div>
+        <div class="stat-card glass hard-glow">
+          <div class="stat-card-icon">🔴</div>
+          <div class="stat-card-val" id="dashHard">0</div>
+          <div class="stat-card-lbl">Hard</div>
+          <div class="stat-card-bar"><div class="stat-bar-fill hard-fill" id="dashHardBar"></div></div>
+        </div>
+        <div class="stat-card glass revisit-glow">
+          <div class="stat-card-icon">🔁</div>
+          <div class="stat-card-val" id="dashRevisit">0</div>
+          <div class="stat-card-lbl">To Revisit</div>
+          <div class="stat-card-bar"><div class="stat-bar-fill revisit-fill" id="dashRevisitBar"></div></div>
+        </div>
+        <div class="stat-card glass week-glow">
+          <div class="stat-card-icon">🔥</div>
+          <div class="stat-card-val" id="dashWeek">0</div>
+          <div class="stat-card-lbl">This Week</div>
+          <div class="stat-card-bar"><div class="stat-bar-fill week-fill" id="dashWeekBar"></div></div>
+        </div>
+      </div>
+
+      <div class="section-hdr">
+        <h2 class="section-title">Tag Distribution</h2>
+      </div>
+      <div class="tag-cloud" id="tagCloud">
+        <p class="muted">No tags yet — add some problems!</p>
+      </div>
+
+      <div class="section-hdr">
+        <h2 class="section-title">Recently Added</h2>
+        <button class="btn-ghost" data-view="problems">View all →</button>
+      </div>
+      <div class="card-grid compact" id="recentList">
+        <p class="muted">Nothing here yet.</p>
+      </div>
+    </section>
+
+    <!-- ── PROBLEMS ── -->
+    <section class="view" id="viewProblems">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Problem Vault</h1>
+          <p class="page-sub">All your solved problems</p>
+        </div>
+        <button class="btn-primary" data-view="add">+ Add Problem</button>
+      </div>
+
+      <div class="filter-bar glass">
+        <div class="search-wrap">
+          <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" class="search-input" id="searchInput" placeholder="Search by title, tag, or LC number…" />
+          <button class="clear-btn hidden" id="clearSearch">✕</button>
+        </div>
+        <div class="diff-chips">
+          <button class="chip active" data-diff="all">All</button>
+          <button class="chip easy" data-diff="Easy">Easy</button>
+          <button class="chip medium" data-diff="Medium">Medium</button>
+          <button class="chip hard" data-diff="Hard">Hard</button>
+        </div>
+        <select class="sort-sel" id="sortSelect">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="difficulty">By difficulty</option>
+          <option value="confidence">By confidence</option>
+          <option value="title">A–Z</option>
+        </select>
+      </div>
+
+      <div class="active-tag-bar" id="activeTagBar"></div>
+
+      <div class="card-grid" id="problemsGrid">
+        <div class="empty-state" id="problemsEmpty">
+          <div class="empty-ico">🧩</div>
+          <div class="empty-title">No problems yet</div>
+          <div class="empty-sub">Hit the button above to add your first!</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── ADD / EDIT ── -->
+    <section class="view" id="viewAdd">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title" id="formTitle">Add Problem</h1>
+          <p class="page-sub">Capture your solution and approach</p>
+        </div>
+      </div>
+
+      <form class="problem-form glass" id="problemForm" novalidate>
+        <input type="hidden" id="editId" />
+
+        <!-- Row 1 -->
+        <div class="form-row">
+          <div class="form-group fg-2">
+            <label class="lbl" for="fTitle">Problem Title *</label>
+            <input type="text" class="finput" id="fTitle" placeholder="e.g. Two Sum" required />
+          </div>
+          <div class="form-group">
+            <label class="lbl" for="fNum">LC #</label>
+            <input type="text" class="finput" id="fNum" placeholder="1" />
+          </div>
+          <div class="form-group">
+            <label class="lbl" for="fDiff">Difficulty *</label>
+            <select class="finput" id="fDiff" required>
+              <option value="">Select…</option>
+              <option value="Easy">🟢 Easy</option>
+              <option value="Medium">🟡 Medium</option>
+              <option value="Hard">🔴 Hard</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Row 2 -->
+        <div class="form-row">
+          <div class="form-group fg-2">
+            <label class="lbl" for="fLink">LeetCode URL</label>
+            <input type="url" class="finput" id="fLink" placeholder="https://leetcode.com/problems/two-sum/" />
+          </div>
+          <div class="form-group">
+            <label class="lbl">Confidence</label>
+            <div class="star-row" id="starRow">
+              <span class="star" data-v="1">★</span>
+              <span class="star" data-v="2">★</span>
+              <span class="star" data-v="3">★</span>
+              <span class="star" data-v="4">★</span>
+              <span class="star" data-v="5">★</span>
+            </div>
+            <input type="hidden" id="fConf" value="0" />
+          </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="form-group">
+          <label class="lbl" for="fTags">Tags <span class="hint">(comma-separated)</span></label>
+          <input type="text" class="finput" id="fTags" placeholder="Array, HashMap, Two Pointers, DP…" />
+          <div class="tag-preview" id="tagPreview"></div>
+        </div>
+
+        <!-- Notes -->
+        <div class="form-group">
+          <label class="lbl" for="fNotes">My Approach / Notes</label>
+          <textarea class="finput ftextarea" id="fNotes" rows="5" placeholder="Describe your thought process, key insight, patterns, edge cases…"></textarea>
+        </div>
+
+        <!-- Solutions -->
+        <div class="form-group">
+          <div class="solutions-hdr">
+            <label class="lbl">Solutions <span class="hint">(default: Java)</span></label>
+            <button type="button" class="btn-ghost small" id="addSolBtn">+ Add Solution</button>
+          </div>
+          <div class="sol-tabs" id="solTabs"></div>
+          <div class="sol-panels" id="solPanels"></div>
+        </div>
+
+        <!-- Complexity + Revisit -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="lbl" for="fTime">Time Complexity</label>
+            <input type="text" class="finput" id="fTime" placeholder="O(n)" />
+          </div>
+          <div class="form-group">
+            <label class="lbl" for="fSpace">Space Complexity</label>
+            <input type="text" class="finput" id="fSpace" placeholder="O(n)" />
+          </div>
+          <div class="form-group center-v">
+            <label class="lbl">Flag for Revisit</label>
+            <label class="toggle">
+              <input type="checkbox" id="fRevisit" />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-txt">Mark for revisit</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn-ghost" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn-primary" id="saveBtn">
+            <span>💾</span> Save Problem
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ── REVISIT ── -->
+    <section class="view" id="viewRevisit">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Revisit List</h1>
+          <p class="page-sub">Problems flagged for another look</p>
+        </div>
+      </div>
+      <div class="card-grid" id="revisitGrid">
+        <div class="empty-state" id="revisitEmpty">
+          <div class="empty-ico">✅</div>
+          <div class="empty-title">You're all caught up!</div>
+          <div class="empty-sub">No problems flagged for revisit.</div>
+        </div>
+      </div>
+    </section>
+
+  </main><!-- /main -->
+
+  <!-- ─── DETAIL MODAL ─────────────────────────────────────────── -->
+  <div class="backdrop hidden" id="backdrop">
+    <div class="modal glass" id="modal" role="dialog" aria-modal="true">
+      <div class="modal-hdr">
+        <div class="modal-title-row">
+          <span class="modal-num" id="mNum"></span>
+          <h2 class="modal-title" id="mTitle"></h2>
+          <span class="diff-badge" id="mDiff"></span>
+          <span class="revisit-badge hidden" id="mRevisitBadge">🔁 Revisit</span>
+        </div>
+        <div class="modal-btns">
+          <button class="btn-ghost small" id="mEdit">✏️ Edit</button>
+          <button class="btn-danger small" id="mDelete">🗑️ Delete</button>
+          <button class="modal-x" id="mClose" aria-label="Close">✕</button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <!-- meta row -->
+        <div class="m-meta" id="mMeta"></div>
+
+        <!-- Tags -->
+        <div class="m-section" id="mTagsSec">
+          <div class="m-sec-title">Tags</div>
+          <div class="m-tags" id="mTags"></div>
+        </div>
+
+        <!-- Notes -->
+        <div class="m-section" id="mNotesSec">
+          <div class="m-sec-title">My Approach</div>
+          <div class="m-notes" id="mNotes"></div>
+        </div>
+
+        <!-- Solutions -->
+        <div class="m-section" id="mSolSec">
+          <div class="m-sec-title">Solutions</div>
+          <div class="m-sol-tabs" id="mSolTabs"></div>
+          <div class="m-sol-panels" id="mSolPanels"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div class="toasts" id="toasts"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
