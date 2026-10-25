@@ -8,6 +8,9 @@
 
 // ── STORAGE KEY ────────────────────────────────────────────────
 const STORE_KEY = 'dsa_vault_v1';
+const GOAL_KEY = 'dsa_vault_weekly_goal';
+const COMPLETED_NUMBERS_KEY = 'dsa_vault_completed_numbers_v1';
+const LEETCODE_PROBLEM_LIMIT = 4086;
 
 // ── DATA LAYER ─────────────────────────────────────────────────
 function loadProblems() {
@@ -100,6 +103,58 @@ function isHttpUrl(value) {
     return false;
   }
 }
+function currentWeekStart() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  return localDateString(date);
+}
+function hasLegacyReview(problem) {
+  if (!problem.reviewedAt) return false;
+  const reviewedAt = new Date(problem.reviewedAt).getTime();
+  const createdAt = new Date(problem.createdAt).getTime();
+  return !Number.isNaN(reviewedAt) &&
+    (Number.isNaN(createdAt) || reviewedAt - createdAt > 60000);
+}
+function weeklyReviewCount(problemList) {
+  const start = currentWeekStart();
+  const today = localDateString();
+  const reviewed = new Set();
+  problemList.forEach(problem => {
+    const history = Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [];
+    const dates = history.map(entry => entry.reviewedAt);
+    if (!history.length && hasLegacyReview(problem)) dates.push(problem.reviewedAt);
+    if (dates.some(date => {
+      const parsed = new Date(date);
+      return !Number.isNaN(parsed.getTime()) &&
+        localDateString(parsed) >= start && localDateString(parsed) <= today;
+    })) reviewed.add(problem.id);
+  });
+  return reviewed.size;
+}
+function getWeeklyGoal() {
+  const stored = Number(localStorage.getItem(GOAL_KEY));
+  return Number.isInteger(stored) && stored >= 1 && stored <= 100 ? stored : 5;
+}
+function loadCompletedNumbers() {
+  const raw = localStorage.getItem(COMPLETED_NUMBERS_KEY);
+  if (raw === null) return [];
+  const numbers = JSON.parse(raw);
+  if (!Array.isArray(numbers) || !numbers.every(number =>
+    Number.isInteger(number) && number >= 1 && number <= LEETCODE_PROBLEM_LIMIT
+  )) {
+    throw new Error('Your saved completed problem numbers are invalid. Export a backup before clearing browser storage.');
+  }
+  return [...new Set(numbers)];
+}
+function saveCompletedNumbers(numbers) {
+  localStorage.setItem(COMPLETED_NUMBERS_KEY, JSON.stringify([...new Set(numbers)]));
+}
+function getProblemNumberSet(problemList = loadProblems()) {
+  return new Set(problemList
+    .map(problem => Number.parseInt(problem.number, 10))
+    .filter(number => Number.isInteger(number) && number >= 1 && number <= LEETCODE_PROBLEM_LIMIT));
+}
 
 // ── TOAST ─────────────────────────────────────────────────────
 function toast(msg, type = 'info') {
@@ -118,6 +173,8 @@ $('#exportBackup').addEventListener('click', () => {
       format: 'dsa-vault-backup',
       version: 1,
       exportedAt: new Date().toISOString(),
+      weeklyGoal: getWeeklyGoal(),
+      completedNumbers: loadCompletedNumbers(),
       problems: loadProblems()
     };
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], {
@@ -152,6 +209,16 @@ $('#backupFile').addEventListener('change', async (event) => {
       throw new Error('Unsupported backup format.');
     }
     if (!Array.isArray(imported)) throw new Error('Backup must contain a problem list.');
+    if (data && data.weeklyGoal !== undefined &&
+      (!Number.isInteger(data.weeklyGoal) || data.weeklyGoal < 1 || data.weeklyGoal > 100)) {
+      throw new Error('Backup contains an invalid weekly goal.');
+    }
+    const importedCompletedNumbers = Array.isArray(data) ? [] : (data.completedNumbers || []);
+    if (!Array.isArray(importedCompletedNumbers) || !importedCompletedNumbers.every(number =>
+      Number.isInteger(number) && number >= 1 && number <= LEETCODE_PROBLEM_LIMIT
+    )) {
+      throw new Error(`Backup completed numbers must be whole numbers from 1 to ${LEETCODE_PROBLEM_LIMIT}.`);
+    }
 
     const validDifficulties = ['Easy', 'Medium', 'Hard'];
     const valid = imported.every(problem =>
@@ -164,6 +231,11 @@ $('#backupFile').addEventListener('change', async (event) => {
         solution && typeof solution === 'object' &&
         LANGS.includes(solution.lang) && typeof solution.code === 'string' &&
         (solution.name === undefined || typeof solution.name === 'string')
+      ))) &&
+      (problem.reviewHistory === undefined || (Array.isArray(problem.reviewHistory) && problem.reviewHistory.every(entry =>
+        entry && typeof entry === 'object' &&
+        typeof entry.reviewedAt === 'string' && !Number.isNaN(new Date(entry.reviewedAt).getTime()) &&
+        Number.isInteger(entry.confidence) && entry.confidence >= 0 && entry.confidence <= 5
       ))) &&
       (problem.confidence === undefined || (Number.isInteger(problem.confidence) && problem.confidence >= 0 && problem.confidence <= 5)) &&
       (problem.link === undefined || problem.link === '' || isHttpUrl(problem.link)) &&
@@ -189,6 +261,8 @@ $('#backupFile').addEventListener('change', async (event) => {
       }
     });
     saveProblems(problems);
+    if (data && data.weeklyGoal !== undefined) localStorage.setItem(GOAL_KEY, String(data.weeklyGoal));
+    saveCompletedNumbers([...loadCompletedNumbers(), ...importedCompletedNumbers]);
     updateSidebarStats();
     if (currentView === 'dashboard') renderDashboard();
     else if (currentView === 'problems') renderProblems();
@@ -259,6 +333,8 @@ function renderDashboard() {
   const rev  = ps.filter(p => p.revisit).length;
   const week = thisWeek(ps);
   const due  = ps.filter(isReviewDue).length;
+  const goal = getWeeklyGoal();
+  const reviewedThisWeek = weeklyReviewCount(ps);
   const total = ps.length;
 
   $('#dashTotal').textContent   = total;
@@ -268,6 +344,11 @@ function renderDashboard() {
   $('#dashRevisit').textContent = rev;
   $('#dashWeek').textContent    = week;
   $('#dashDue').textContent     = due;
+  $('#weeklyGoalInput').value = goal;
+  $('#goalProgress').setAttribute('aria-valuemax', goal);
+  $('#goalProgress').setAttribute('aria-valuenow', Math.min(reviewedThisWeek, goal));
+  $('#goalProgressFill').style.width = Math.min(100, (reviewedThisWeek / goal) * 100) + '%';
+  $('#goalProgressCopy').textContent = `${reviewedThisWeek} of ${goal} ${goal === 1 ? 'problem' : 'problems'} reviewed this week${reviewedThisWeek >= goal ? ' — goal reached!' : ''}`;
 
   const pct = (n) => total ? Math.round((n / total) * 100) + '%' : '0%';
   $('#dashEasyBar').style.width    = pct(easy);
@@ -317,6 +398,24 @@ function renderDashboard() {
     attachCardListeners(recentList);
   }
 }
+
+$('#goalForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const goal = Number($('#weeklyGoalInput').value);
+  if (!Number.isInteger(goal) || goal < 1 || goal > 100) {
+    toast('Set a weekly goal between 1 and 100.', 'error');
+    $('#weeklyGoalInput').focus();
+    return;
+  }
+  try {
+    localStorage.setItem(GOAL_KEY, String(goal));
+    renderDashboard();
+    toast('Weekly practice goal updated.', 'success');
+  } catch (error) {
+    console.error('Could not save weekly practice goal', error);
+    toast('Could not save your goal. Check browser storage permissions.', 'error');
+  }
+});
 
 // ── PROBLEM CARD HTML ─────────────────────────────────────────
 function probCardHTML(p) {
@@ -679,7 +778,8 @@ $('#problemForm').addEventListener('submit', (e) => {
     favorite:      Boolean($('#fFavorite').checked),
     revisit:       $('#fRevisit').checked,
     createdAt:     editId ? (problems.find(p => p.id === editId)?.createdAt || new Date().toISOString()) : new Date().toISOString(),
-    reviewedAt:    editId ? problems.find(p => p.id === editId)?.reviewedAt : new Date().toISOString(),
+    reviewedAt:    editId ? problems.find(p => p.id === editId)?.reviewedAt : undefined,
+    reviewHistory: editId ? problems.find(p => p.id === editId)?.reviewHistory || [] : [],
     nextReviewDate: editId
       ? problems.find(p => p.id === editId)?.nextReviewDate
       : nextReviewDate(parseInt($('#fConf').value, 10) || 0),
@@ -695,6 +795,7 @@ $('#problemForm').addEventListener('submit', (e) => {
     else problems.unshift(prob);
   }
   saveProblems(problems);
+  recordCompletedNumber(prob.number);
   updateSidebarStats();
   toast(editId ? 'Problem updated! 🎉' : 'Problem saved! 💾', 'success');
   resetForm();
@@ -708,8 +809,9 @@ $('#cancelBtn').addEventListener('click', () => {
 
 // ── MODAL ─────────────────────────────────────────────────────
 let modalProblemId = null;
+let modalPracticeMode = false;
 
-function openModal(id) {
+function openModal(id, practice = false) {
   problems = loadProblems();
   const p = problems.find(p => p.id === id);
   if (!p) return;
@@ -801,9 +903,52 @@ function openModal(id) {
     mSolSec.classList.add('hidden');
   }
 
+  const history = Array.isArray(p.reviewHistory) ? [...p.reviewHistory] : [];
+  if (!history.length && hasLegacyReview(p)) {
+    history.push({ reviewedAt: p.reviewedAt, confidence: p.confidence || 0 });
+  }
+  history.sort((a, b) => new Date(b.reviewedAt) - new Date(a.reviewedAt));
+  $('#mHistory').innerHTML = history.length
+    ? history.map(entry => `
+      <div class="review-history-item">
+        <span>${fmtDate(entry.reviewedAt)}</span>
+        <span>${entry.confidence ? `${starsHTML(entry.confidence)} (${entry.confidence}/5)` : 'Not rated'}</span>
+      </div>`).join('')
+    : '<p class="muted">No reviews recorded yet.</p>';
+  $('#mReviewConfidence').value = 'current';
+  $('#mRevealNotes').classList.toggle('hidden', !p.notes);
+  $('#mRevealSolutions').classList.toggle('hidden', !solns.length);
+  $('#mNotes').classList.remove('practice-hidden');
+  $('#mSolTabs').classList.remove('practice-hidden');
+  $('#mSolPanels').classList.remove('practice-hidden');
+  setPracticeMode(practice);
+
   $('#backdrop').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
+
+function setPracticeMode(enabled) {
+  modalPracticeMode = enabled;
+  $('#mPractice').classList.toggle('active', enabled);
+  $('#mPractice').setAttribute('aria-pressed', String(enabled));
+  $('#mPractice').textContent = enabled ? '✕ Exit practice mode' : '🎯 Practice mode';
+  $('#mRevealNotes').classList.toggle('hidden', !enabled || $('#mNotesSec').classList.contains('hidden'));
+  $('#mRevealSolutions').classList.toggle('hidden', !enabled || $('#mSolSec').classList.contains('hidden'));
+  $('#mNotes').classList.toggle('practice-hidden', enabled);
+  $('#mSolTabs').classList.toggle('practice-hidden', enabled);
+  $('#mSolPanels').classList.toggle('practice-hidden', enabled);
+}
+
+$('#mPractice').addEventListener('click', () => setPracticeMode(!modalPracticeMode));
+$('#mRevealNotes').addEventListener('click', () => {
+  $('#mNotes').classList.remove('practice-hidden');
+  $('#mRevealNotes').classList.add('hidden');
+});
+$('#mRevealSolutions').addEventListener('click', () => {
+  $('#mSolTabs').classList.remove('practice-hidden');
+  $('#mSolPanels').classList.remove('practice-hidden');
+  $('#mRevealSolutions').classList.add('hidden');
+});
 
 function closeModal() {
   $('#backdrop').classList.add('hidden');
@@ -813,7 +958,76 @@ function closeModal() {
 
 $('#mClose').addEventListener('click', closeModal);
 $('#backdrop').addEventListener('click', (e) => { if (e.target === $('#backdrop')) closeModal(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeModal();
+    closeChallenge();
+  }
+});
+
+let activeChallengeNumber = null;
+
+function recordCompletedNumber(rawNumber) {
+  const number = Number.parseInt(rawNumber, 10);
+  if (!Number.isInteger(number) || number < 1 || number > LEETCODE_PROBLEM_LIMIT) return;
+  saveCompletedNumbers([...loadCompletedNumbers(), number]);
+}
+
+function pickUnsolvedNumber() {
+  const unavailable = getProblemNumberSet();
+  loadCompletedNumbers().forEach(number => unavailable.add(number));
+  const available = [];
+  for (let number = 1; number <= LEETCODE_PROBLEM_LIMIT; number++) {
+    if (!unavailable.has(number)) available.push(number);
+  }
+  if (!available.length) {
+    toast(`All numbers from 1 to ${LEETCODE_PROBLEM_LIMIT} are marked solved.`, 'info');
+    return;
+  }
+  activeChallengeNumber = available[Math.floor(Math.random() * available.length)];
+  $('#challengeNumber').textContent = `#${activeChallengeNumber}`;
+  $('#challengeLink').href = `https://leetcode.com/problemset/?search=${activeChallengeNumber}`;
+  $('#challengeComplete').classList.add('hidden');
+  $('#challengeMarkDone').classList.remove('hidden');
+  $('#challengeAddDetails').classList.add('hidden');
+  $('#challengeBackdrop').classList.remove('hidden');
+}
+
+function closeChallenge() {
+  $('#challengeBackdrop').classList.add('hidden');
+  activeChallengeNumber = null;
+}
+
+$('#challengeClose').addEventListener('click', closeChallenge);
+$('#challengeBackdrop').addEventListener('click', event => {
+  if (event.target === $('#challengeBackdrop')) closeChallenge();
+});
+$('#challengeAnother').addEventListener('click', pickUnsolvedNumber);
+$('#challengeMarkDone').addEventListener('click', () => {
+  if (!activeChallengeNumber) return;
+  try {
+    saveCompletedNumbers([...loadCompletedNumbers(), activeChallengeNumber]);
+    $('#challengeComplete').classList.remove('hidden');
+    $('#challengeMarkDone').classList.add('hidden');
+    $('#challengeAddDetails').classList.remove('hidden');
+    toast(`LeetCode #${activeChallengeNumber} marked done.`, 'success');
+  } catch (error) {
+    console.error('Could not save completed problem number', error);
+    toast('Could not save this completion. Check browser storage permissions.', 'error');
+  }
+});
+$('#challengeAddDetails').addEventListener('click', () => {
+  if (!activeChallengeNumber) return;
+  const number = activeChallengeNumber;
+  closeChallenge();
+  showView('add');
+  $('#fNum').value = String(number);
+  $('#fLink').value = `https://leetcode.com/problemset/?search=${number}`;
+});
+
+$('#randomPracticeBtn').addEventListener('click', () => {
+  pickUnsolvedNumber();
+});
 
 $('#mReviewed').addEventListener('click', () => {
   if (!modalProblemId) return;
@@ -821,8 +1035,15 @@ $('#mReviewed').addEventListener('click', () => {
   const problem = problems.find(item => item.id === modalProblemId);
   if (!problem) return;
   const now = new Date();
+  const selectedConfidence = $('#mReviewConfidence').value;
+  const confidence = selectedConfidence === 'current'
+    ? (problem.confidence || 0)
+    : Number(selectedConfidence);
+  problem.confidence = confidence;
   problem.reviewedAt = now.toISOString();
-  problem.nextReviewDate = nextReviewDate(problem.confidence || 0, now);
+  problem.nextReviewDate = nextReviewDate(confidence, now);
+  problem.reviewHistory = Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [];
+  problem.reviewHistory.push({ reviewedAt: now.toISOString(), confidence });
   problem.revisit = false;
   problem.updatedAt = now.toISOString();
   saveProblems(problems);

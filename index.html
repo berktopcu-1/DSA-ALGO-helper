@@ -93,7 +93,10 @@
           <h1 class="page-title">Cloud Dashboard</h1>
           <p class="page-sub">Your personal algorithm environment native to GitHub</p>
         </div>
-        <button class="btn-primary" data-view="add" id="quickAddBtn">+ Add Problem</button>
+        <div class="dashboard-actions">
+          <button class="btn-ghost" type="button" id="randomPracticeBtn">🎯 Random unsolved</button>
+          <button class="btn-primary" data-view="add" id="quickAddBtn">+ Add Problem</button>
+        </div>
       </div>
 
       <div class="stats-grid">
@@ -140,6 +143,24 @@
           <div class="stat-card-bar"><div class="stat-bar-fill revisit-fill" id="dashDueBar"></div></div>
         </div>
       </div>
+
+      <section class="study-goal glass" aria-labelledby="studyGoalTitle">
+        <div class="study-goal-header">
+          <div>
+            <h2 class="section-title" id="studyGoalTitle">Weekly practice goal</h2>
+            <p class="muted">Track distinct problems you review this week.</p>
+          </div>
+          <form class="goal-form" id="goalForm">
+            <label class="sr-only" for="weeklyGoalInput">Problems per week goal</label>
+            <input id="weeklyGoalInput" class="finput" type="number" min="1" max="100" step="1" value="5" />
+            <button class="btn-ghost small" type="submit">Set goal</button>
+          </form>
+        </div>
+        <div class="goal-progress-track" role="progressbar" id="goalProgress" aria-label="Weekly practice goal progress" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0">
+          <div class="goal-progress-fill" id="goalProgressFill"></div>
+        </div>
+        <p class="goal-progress-copy" id="goalProgressCopy">0 of 5 problems reviewed this week</p>
+      </section>
 
       <div class="section-hdr">
         <h2 class="section-title">Topic Coverage</h2>
@@ -344,6 +365,7 @@
           <span class="revisit-badge hidden" id="mRevisitBadge">🔁 Revisit</span>
         </div>
         <div class="modal-btns">
+          <button class="btn-ghost small" id="mPractice" type="button" aria-pressed="false">🎯 Practice mode</button>
           <button class="btn-primary small" id="mReviewed">✓ Mark reviewed</button>
           <button class="btn-ghost small modal-fav-btn" id="mFav">⭐ Favorite</button>
           <button class="btn-ghost small" id="mEdit">✏️ Edit</button>
@@ -364,18 +386,63 @@
 
         <!-- Notes -->
         <div class="m-section" id="mNotesSec">
-          <div class="m-sec-title">My Approach</div>
+          <div class="m-section-hdr">
+            <div class="m-sec-title">My Approach</div>
+            <button class="btn-ghost small practice-reveal hidden" id="mRevealNotes" type="button">Reveal notes</button>
+          </div>
           <div class="m-notes" id="mNotes"></div>
         </div>
 
         <!-- Solutions -->
         <div class="m-section" id="mSolSec">
-          <div class="m-sec-title">Solutions</div>
+          <div class="m-section-hdr">
+            <div class="m-sec-title">Solutions</div>
+            <button class="btn-ghost small practice-reveal hidden" id="mRevealSolutions" type="button">Reveal solutions</button>
+          </div>
           <div class="m-sol-tabs" id="mSolTabs"></div>
           <div class="m-sol-panels" id="mSolPanels"></div>
         </div>
+
+        <div class="m-section" id="mHistorySec">
+          <div class="m-sec-title">Review history</div>
+          <div class="review-history" id="mHistory"></div>
+        </div>
+        <label class="review-confidence" for="mReviewConfidence">
+          Confidence after review
+          <select id="mReviewConfidence" class="finput">
+            <option value="current">Keep current rating</option>
+            <option value="1">1 — Need more practice</option>
+            <option value="2">2 — Still unsure</option>
+            <option value="3">3 — Getting there</option>
+            <option value="4">4 — Confident</option>
+            <option value="5">5 — Can solve independently</option>
+          </select>
+        </label>
       </div>
     </div>
+  </div>
+
+  <div class="backdrop hidden" id="challengeBackdrop">
+    <section class="modal challenge-modal" role="dialog" aria-modal="true" aria-labelledby="challengeTitle">
+      <div class="modal-hdr">
+        <div>
+          <h2 class="modal-title" id="challengeTitle">Random unsolved LeetCode</h2>
+          <p class="page-sub">Pick a number from 1–4,086 that isn't in your solved list.</p>
+        </div>
+        <button class="modal-x" id="challengeClose" aria-label="Close">✕</button>
+      </div>
+      <div class="challenge-body">
+        <div class="challenge-number" id="challengeNumber">#—</div>
+        <a class="btn-ghost" id="challengeLink" href="https://leetcode.com/problemset/" target="_blank" rel="noopener">Open LeetCode problemset ↗</a>
+        <p class="muted">Search the number on LeetCode. When you finish it, mark it done so it won't be picked again.</p>
+        <p class="challenge-complete hidden" id="challengeComplete">✓ This number is saved as completed.</p>
+        <div class="challenge-actions">
+          <button class="btn-ghost" type="button" id="challengeAnother">Pick another</button>
+          <button class="btn-ghost hidden" type="button" id="challengeAddDetails">Add details to vault</button>
+          <button class="btn-primary" type="button" id="challengeMarkDone">✓ Mark as done</button>
+        </div>
+      </div>
+    </section>
   </div>
 
   <!-- Toasts -->
