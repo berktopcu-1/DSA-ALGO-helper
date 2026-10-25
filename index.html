@@ -27,11 +27,14 @@
     <div class="sidebar-header">
       <div class="logo">
         <span class="logo-icon">⚡</span>
-        <div class="logo-text">DSA<span class="logo-accent">Vault</span></div>
+        <div class="logo-text">DSA<span class="logo-accent">Vault</span><span class="logo-badge">Codespaces</span></div>
       </div>
-      <button class="hamburger" id="sidebarToggle" aria-label="Toggle sidebar">
-        <span></span><span></span><span></span>
-      </button>
+      <div class="header-actions">
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Switch light/dark theme">🌙</button>
+        <button class="hamburger" id="sidebarToggle" aria-label="Toggle sidebar">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
     </div>
 
     <nav class="sidebar-nav">
@@ -68,6 +71,11 @@
           <span class="stat-lbl">Hard</span>
         </div>
       </div>
+      <div class="backup-actions">
+        <button type="button" class="btn-ghost small" id="exportBackup" title="Download your problems as a JSON backup">Export backup</button>
+        <button type="button" class="btn-ghost small" id="importBackup" title="Merge problems from a JSON backup">Import backup</button>
+        <input type="file" id="backupFile" accept="application/json,.json" hidden />
+      </div>
     </div>
   </aside>
 
@@ -76,12 +84,16 @@
 
     <!-- ── DASHBOARD ── -->
     <section class="view active" id="viewDashboard">
+      <div class="codespaces-hero-badge">
+        <span class="badge-dot"></span>
+        <span>Codespaces Cloud Engine · Instant DSA Workspaces</span>
+      </div>
       <div class="page-header">
         <div>
-          <h1 class="page-title">Dashboard</h1>
-          <p class="page-sub">Your DSA journey at a glance</p>
+          <h1 class="page-title">Cloud Dashboard</h1>
+          <p class="page-sub">Your personal algorithm environment native to GitHub</p>
         </div>
-        <button class="btn-primary pulse-btn" data-view="add" id="quickAddBtn">+ Add Problem</button>
+        <button class="btn-primary" data-view="add" id="quickAddBtn">+ Add Problem</button>
       </div>
 
       <div class="stats-grid">
@@ -118,15 +130,21 @@
         <div class="stat-card glass week-glow">
           <div class="stat-card-icon">🔥</div>
           <div class="stat-card-val" id="dashWeek">0</div>
-          <div class="stat-card-lbl">This Week</div>
+          <div class="stat-card-lbl">Added in last 7 days</div>
           <div class="stat-card-bar"><div class="stat-bar-fill week-fill" id="dashWeekBar"></div></div>
+        </div>
+        <div class="stat-card glass revisit-glow">
+          <div class="stat-card-icon">⏰</div>
+          <div class="stat-card-val" id="dashDue">0</div>
+          <div class="stat-card-lbl">Due for Review</div>
+          <div class="stat-card-bar"><div class="stat-bar-fill revisit-fill" id="dashDueBar"></div></div>
         </div>
       </div>
 
       <div class="section-hdr">
-        <h2 class="section-title">Tag Distribution</h2>
+        <h2 class="section-title">Topic Coverage</h2>
       </div>
-      <div class="tag-cloud" id="tagCloud">
+      <div class="topic-coverage" id="tagCloud">
         <p class="muted">No tags yet — add some problems!</p>
       </div>
 
@@ -153,10 +171,12 @@
         <div class="search-wrap">
           <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" class="search-input" id="searchInput" placeholder="Search by title, tag, or LC number…" />
+          <kbd class="search-kbd">/</kbd>
           <button class="clear-btn hidden" id="clearSearch">✕</button>
         </div>
         <div class="diff-chips">
           <button class="chip active" data-diff="all">All</button>
+          <button class="chip fav-chip" data-diff="fav">⭐ Starred</button>
           <button class="chip easy" data-diff="Easy">Easy</button>
           <button class="chip medium" data-diff="Medium">Medium</button>
           <button class="chip hard" data-diff="Hard">Hard</button>
@@ -256,7 +276,7 @@
           <div class="sol-panels" id="solPanels"></div>
         </div>
 
-        <!-- Complexity + Revisit -->
+        <!-- Complexity + Revisit + Favorite -->
         <div class="form-row">
           <div class="form-group">
             <label class="lbl" for="fTime">Time Complexity</label>
@@ -265,6 +285,14 @@
           <div class="form-group">
             <label class="lbl" for="fSpace">Space Complexity</label>
             <input type="text" class="finput" id="fSpace" placeholder="O(n)" />
+          </div>
+          <div class="form-group center-v">
+            <label class="lbl">Favorite / Pin</label>
+            <label class="toggle">
+              <input type="checkbox" id="fFavorite" />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-txt">⭐ Pin to top</span>
+            </label>
           </div>
           <div class="form-group center-v">
             <label class="lbl">Flag for Revisit</label>
@@ -290,7 +318,7 @@
       <div class="page-header">
         <div>
           <h1 class="page-title">Revisit List</h1>
-          <p class="page-sub">Problems flagged for another look</p>
+          <p class="page-sub">Flagged problems and reviews that are due</p>
         </div>
       </div>
       <div class="card-grid" id="revisitGrid">
@@ -311,10 +339,13 @@
         <div class="modal-title-row">
           <span class="modal-num" id="mNum"></span>
           <h2 class="modal-title" id="mTitle"></h2>
+          <span class="fav-badge hidden" id="mFavBadge">⭐ Pinned</span>
           <span class="diff-badge" id="mDiff"></span>
           <span class="revisit-badge hidden" id="mRevisitBadge">🔁 Revisit</span>
         </div>
         <div class="modal-btns">
+          <button class="btn-primary small" id="mReviewed">✓ Mark reviewed</button>
+          <button class="btn-ghost small modal-fav-btn" id="mFav">⭐ Favorite</button>
           <button class="btn-ghost small" id="mEdit">✏️ Edit</button>
           <button class="btn-danger small" id="mDelete">🗑️ Delete</button>
           <button class="modal-x" id="mClose" aria-label="Close">✕</button>
@@ -350,6 +381,7 @@
   <!-- Toasts -->
   <div class="toasts" id="toasts"></div>
 
+  <script src="seed_data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

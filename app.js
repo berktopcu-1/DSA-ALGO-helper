@@ -11,9 +11,31 @@ const STORE_KEY = 'dsa_vault_v1';
 
 // ── DATA LAYER ─────────────────────────────────────────────────
 function loadProblems() {
+  const seeds = (typeof window !== 'undefined' && window.SEED_PROBLEMS) || [];
   try {
-    return JSON.parse(localStorage.getItem(STORE_KEY)) || [];
-  } catch { return []; }
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const stored = JSON.parse(raw);
+      if (Array.isArray(stored) && stored.length > 0) {
+        // Merge any seed problems not yet in local storage (by number & title)
+        const existingKeys = new Set(stored.map(p => (p.number || '') + ':' + p.title.toLowerCase()));
+        const toAdd = seeds.filter(p => !existingKeys.has((p.number || '') + ':' + p.title.toLowerCase()));
+        if (toAdd.length > 0) {
+          const merged = [...stored, ...toAdd];
+          saveProblems(merged);
+          return merged;
+        }
+        return stored;
+      }
+    }
+    if (seeds.length > 0) {
+      saveProblems(seeds);
+      return seeds;
+    }
+    return [];
+  } catch {
+    return seeds;
+  }
 }
 function saveProblems(data) {
   localStorage.setItem(STORE_KEY, JSON.stringify(data));
@@ -42,6 +64,42 @@ function thisWeek(problems) {
   const weekAgo = Date.now() - 7 * 86400000;
   return problems.filter(p => new Date(p.createdAt).getTime() > weekAgo).length;
 }
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+function reviewIntervalDays(confidence) {
+  return ({ 0: 1, 1: 1, 2: 3, 3: 7, 4: 14, 5: 30 })[confidence] || 1;
+}
+function nextReviewDate(confidence, from = new Date()) {
+  const date = new Date(from);
+  date.setDate(date.getDate() + reviewIntervalDays(confidence));
+  return localDateString(date);
+}
+function isReviewDue(problem) {
+  return Boolean(problem.nextReviewDate && problem.nextReviewDate <= localDateString());
+}
+function fmtReviewDate(date) {
+  return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric'
+  });
+}
+function isValidDateOnly(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+function isHttpUrl(value) {
+  if (typeof value !== 'string') return false;
+  try {
+    return ['http:', 'https:'].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
 
 // ── TOAST ─────────────────────────────────────────────────────
 function toast(msg, type = 'info') {
@@ -52,6 +110,97 @@ function toast(msg, type = 'info') {
   $('#toasts').appendChild(el);
   setTimeout(() => el.remove(), 3100);
 }
+
+// ── BACKUP / RESTORE ─────────────────────────────────────────
+$('#exportBackup').addEventListener('click', () => {
+  try {
+    const backup = {
+      format: 'dsa-vault-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      problems: loadProblems()
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], {
+      type: 'application/json'
+    }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `dsa-vault-backup-${localDateString()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Backup downloaded 💾', 'success');
+  } catch (error) {
+    console.error('Could not export backup', error);
+    toast('Could not export backup. Check browser storage permissions.', 'error');
+  }
+});
+
+$('#importBackup').addEventListener('click', () => $('#backupFile').click());
+$('#backupFile').addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    let imported;
+    if (Array.isArray(data)) {
+      imported = data;
+    } else if (data && data.format === 'dsa-vault-backup' && data.version === 1) {
+      imported = data.problems;
+    } else {
+      throw new Error('Unsupported backup format.');
+    }
+    if (!Array.isArray(imported)) throw new Error('Backup must contain a problem list.');
+
+    const validDifficulties = ['Easy', 'Medium', 'Hard'];
+    const valid = imported.every(problem =>
+      problem && typeof problem === 'object' &&
+      typeof problem.id === 'string' && problem.id.length > 0 &&
+      typeof problem.title === 'string' && problem.title.trim().length > 0 &&
+      validDifficulties.includes(problem.difficulty) &&
+      (problem.tags === undefined || (Array.isArray(problem.tags) && problem.tags.every(tag => typeof tag === 'string'))) &&
+      (problem.solutions === undefined || (Array.isArray(problem.solutions) && problem.solutions.every(solution =>
+        solution && typeof solution === 'object' &&
+        LANGS.includes(solution.lang) && typeof solution.code === 'string' &&
+        (solution.name === undefined || typeof solution.name === 'string')
+      ))) &&
+      (problem.confidence === undefined || (Number.isInteger(problem.confidence) && problem.confidence >= 0 && problem.confidence <= 5)) &&
+      (problem.link === undefined || problem.link === '' || isHttpUrl(problem.link)) &&
+      (problem.nextReviewDate === undefined || isValidDateOnly(problem.nextReviewDate))
+    );
+    if (!valid) throw new Error('Backup contains invalid problem data.');
+
+    problems = loadProblems();
+    let added = 0;
+    let updated = 0;
+    imported.forEach(problem => {
+      const key = `${problem.number || ''}:${problem.title.toLowerCase()}`;
+      const index = problems.findIndex(existing =>
+        existing.id === problem.id ||
+        `${existing.number || ''}:${existing.title.toLowerCase()}` === key
+      );
+      if (index === -1) {
+        problems.push(problem);
+        added++;
+      } else {
+        problems[index] = problem;
+        updated++;
+      }
+    });
+    saveProblems(problems);
+    updateSidebarStats();
+    if (currentView === 'dashboard') renderDashboard();
+    else if (currentView === 'problems') renderProblems();
+    else if (currentView === 'revisit') renderRevisit();
+    toast(`Backup imported: ${added} added, ${updated} updated.`, 'success');
+  } catch (error) {
+    console.error('Could not import backup', error);
+    toast(error instanceof SyntaxError ? 'That file is not valid JSON.' : error.message || 'Could not import backup.', 'error');
+  } finally {
+    event.target.value = '';
+  }
+});
 
 // ── NAVIGATION ────────────────────────────────────────────────
 let currentView = 'dashboard';
@@ -109,6 +258,7 @@ function renderDashboard() {
   const hard = ps.filter(p => p.difficulty === 'Hard').length;
   const rev  = ps.filter(p => p.revisit).length;
   const week = thisWeek(ps);
+  const due  = ps.filter(isReviewDue).length;
   const total = ps.length;
 
   $('#dashTotal').textContent   = total;
@@ -117,6 +267,7 @@ function renderDashboard() {
   $('#dashHard').textContent    = hard;
   $('#dashRevisit').textContent = rev;
   $('#dashWeek').textContent    = week;
+  $('#dashDue').textContent     = due;
 
   const pct = (n) => total ? Math.round((n / total) * 100) + '%' : '0%';
   $('#dashEasyBar').style.width    = pct(easy);
@@ -124,8 +275,9 @@ function renderDashboard() {
   $('#dashHardBar').style.width    = pct(hard);
   $('#dashRevisitBar').style.width = pct(rev);
   $('#dashWeekBar').style.width    = week ? Math.min(100, (week / Math.max(total,1)) * 100) + '%' : '0%';
+  $('#dashDueBar').style.width     = pct(due);
 
-  // Tag cloud
+  // Topic coverage, with the least-practiced topics first.
   const tagMap = {};
   ps.forEach(p => (p.tags || []).forEach(t => { tagMap[t] = (tagMap[t] || 0) + 1; }));
   const tagCloud = $('#tagCloud');
@@ -133,13 +285,21 @@ function renderDashboard() {
     tagCloud.innerHTML = '<p class="muted">No tags yet — add some problems!</p>';
   } else {
     tagCloud.innerHTML = Object.entries(tagMap)
-      .sort((a, b) => b[1] - a[1])
-      .map(([tag, cnt]) => `
-        <div class="tag-cloud-item" data-tag="${tag}">
-          ${tag} <span class="tag-count">${cnt}</span>
-        </div>`)
+      .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+      .map(([tag, cnt]) => {
+        const coverage = Math.round((cnt / Math.max(total, 1)) * 100);
+        const safeTag = escHtml(tag);
+        return `
+        <button type="button" class="topic-item" data-tag="${safeTag}" title="Filter by ${safeTag}">
+          <span class="topic-item-header">
+            <span class="topic-item-name">${safeTag}</span>
+            <span class="topic-item-count">${cnt} ${cnt === 1 ? 'problem' : 'problems'} · ${coverage}%</span>
+          </span>
+          <span class="topic-item-bar"><span class="topic-item-fill" style="width:${coverage}%"></span></span>
+        </button>`;
+      })
       .join('');
-    $$('.tag-cloud-item', tagCloud).forEach(el => {
+    $$('.topic-item', tagCloud).forEach(el => {
       el.addEventListener('click', () => {
         activeTagFilter = el.dataset.tag;
         showView('problems');
@@ -161,26 +321,36 @@ function renderDashboard() {
 // ── PROBLEM CARD HTML ─────────────────────────────────────────
 function probCardHTML(p) {
   const tagPills = (p.tags || []).slice(0, 4).map(t =>
-    `<span class="tag-pill">${t}</span>`).join('');
+    `<span class="tag-pill">${escHtml(t)}</span>`).join('');
   const extraTags = (p.tags || []).length > 4 ?
     `<span class="tag-pill">+${(p.tags||[]).length - 4}</span>` : '';
   const stars = p.confidence ? `<span class="card-stars" title="Confidence: ${p.confidence}/5">${starsHTML(p.confidence)}</span>` : '';
   const revisitFlag = p.revisit ? '<span class="revisit-flag">🔁 Revisit</span>' : '';
+  const dueFlag = isReviewDue(p) ? '<span class="review-due-flag">⏰ Review due</span>' : '';
+  const favBadge = p.favorite ? '<span class="fav-badge">⭐ Pinned</span>' : '';
   const complexity = [
-    p.timeComplexity ? `⏱ ${p.timeComplexity}` : '',
-    p.spaceComplexity ? `💾 ${p.spaceComplexity}` : ''
+    p.timeComplexity ? `⏱ ${escHtml(p.timeComplexity)}` : '',
+    p.spaceComplexity ? `💾 ${escHtml(p.spaceComplexity)}` : ''
   ].filter(Boolean).join('  ');
 
   return `
-    <div class="prob-card ${diffClass(p.difficulty)}" data-id="${p.id}" role="button" tabindex="0">
+    <div class="prob-card ${diffClass(p.difficulty)}${p.favorite ? ' is-favorite' : ''}" data-id="${escHtml(p.id)}" role="button" tabindex="0">
       <div class="card-top">
-        <span class="card-num">${p.number ? '#' + p.number : ''}</span>
+        <div class="card-top-left">
+          <button type="button" class="card-fav-btn ${p.favorite ? 'active' : ''}" data-fav="${escHtml(p.id)}" title="${p.favorite ? 'Unpin from top' : 'Star problem (pins to top)'}" aria-label="Star">
+            <span>${p.favorite ? '★' : '☆'}</span>
+            <span>${p.favorite ? 'Starred' : 'Star'}</span>
+          </button>
+          <span class="card-num">${p.number ? '#' + escHtml(String(p.number)) : ''}</span>
+        </div>
         <div class="card-badges">
+          ${favBadge}
           ${revisitFlag}
+          ${dueFlag}
           <span class="diff-badge ${p.difficulty}">${p.difficulty}</span>
         </div>
       </div>
-      <div class="card-title">${p.title}</div>
+      <div class="card-title">${escHtml(p.title)}</div>
       <div class="card-tags">${tagPills}${extraTags}</div>
       <div class="card-footer">
         <span class="card-complexity">${complexity}</span>
@@ -191,9 +361,43 @@ function probCardHTML(p) {
 
 function attachCardListeners(container) {
   $$('.prob-card', container).forEach(card => {
-    card.addEventListener('click', () => openModal(card.dataset.id));
-    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openModal(card.dataset.id); });
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.card-fav-btn')) return;
+      openModal(card.dataset.id);
+    });
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        if (e.target.closest('.card-fav-btn')) return;
+        openModal(card.dataset.id);
+      }
+    });
   });
+
+  $$('.card-fav-btn', container).forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFavorite(btn.dataset.fav);
+    });
+  });
+}
+
+// ── TOGGLE FAVORITE ───────────────────────────────────────────
+function toggleFavorite(id) {
+  problems = loadProblems();
+  const p = problems.find(x => x.id === id);
+  if (!p) return;
+  p.favorite = !p.favorite;
+  saveProblems(problems);
+  toast(p.favorite ? 'Pinned to top ⭐' : 'Unpinned from top', 'info');
+  if (currentView === 'dashboard') renderDashboard();
+  else if (currentView === 'revisit') renderRevisit();
+  else renderProblems();
+
+  if (modalProblemId === id) {
+    $('#mFavBadge').classList.toggle('hidden', !p.favorite);
+    $('#mFav').classList.toggle('active', !!p.favorite);
+    $('#mFav').textContent = p.favorite ? '★ Favorited' : '☆ Favorite';
+  }
 }
 
 // ── PROBLEMS VIEW ─────────────────────────────────────────────
@@ -208,15 +412,19 @@ function renderProblems() {
   // Active tag filter pill
   const bar = $('#activeTagBar');
   if (activeTagFilter) {
-    bar.innerHTML = `<div class="active-tag-pill" id="removeTagFilter">${activeTagFilter} ✕</div>`;
+    bar.innerHTML = `<div class="active-tag-pill" id="removeTagFilter">${escHtml(activeTagFilter)} ✕</div>`;
     $('#removeTagFilter').addEventListener('click', () => { activeTagFilter = null; renderProblems(); });
     ps = ps.filter(p => (p.tags || []).includes(activeTagFilter));
   } else {
     bar.innerHTML = '';
   }
 
-  // Diff filter
-  if (diffFilter !== 'all') ps = ps.filter(p => p.difficulty === diffFilter);
+  // Diff filter (all, fav, Easy, Medium, Hard)
+  if (diffFilter === 'fav') {
+    ps = ps.filter(p => p.favorite);
+  } else if (diffFilter !== 'all') {
+    ps = ps.filter(p => p.difficulty === diffFilter);
+  }
 
   // Search
   if (searchQuery) {
@@ -228,9 +436,12 @@ function renderProblems() {
     );
   }
 
-  // Sort
+  // Sort (favorites / pinned always stay at the top!)
   const diffOrder = { Easy: 1, Medium: 2, Hard: 3 };
   ps.sort((a, b) => {
+    if (Boolean(b.favorite) !== Boolean(a.favorite)) {
+      return b.favorite ? 1 : -1;
+    }
     if (sortMode === 'newest')     return new Date(b.createdAt) - new Date(a.createdAt);
     if (sortMode === 'oldest')     return new Date(a.createdAt) - new Date(b.createdAt);
     if (sortMode === 'difficulty') return (diffOrder[a.difficulty]||0) - (diffOrder[b.difficulty]||0);
@@ -277,6 +488,18 @@ clearBtn.addEventListener('click', () => {
   renderProblems();
 });
 
+// GitHub-style '/' shortcut to focus search
+document.addEventListener('keydown', (e) => {
+  if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+    e.preventDefault();
+    if (currentView !== 'problems') showView('problems');
+    setTimeout(() => {
+      searchInput.focus();
+      searchInput.select();
+    }, 10);
+  }
+});
+
 // Sort
 $('#sortSelect').addEventListener('change', () => {
   sortMode = $('#sortSelect').value;
@@ -286,13 +509,21 @@ $('#sortSelect').addEventListener('change', () => {
 // ── REVISIT VIEW ──────────────────────────────────────────────
 function renderRevisit() {
   problems = loadProblems();
-  const revProblems = problems.filter(p => p.revisit);
+  const revProblems = problems.filter(p => p.revisit || isReviewDue(p));
+  revProblems.sort((a, b) => {
+    if (isReviewDue(a) !== isReviewDue(b)) return isReviewDue(a) ? -1 : 1;
+    if (a.nextReviewDate && b.nextReviewDate && a.nextReviewDate !== b.nextReviewDate) {
+      return a.nextReviewDate.localeCompare(b.nextReviewDate);
+    }
+    if (Boolean(b.favorite) !== Boolean(a.favorite)) return b.favorite ? 1 : -1;
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
   const grid = $('#revisitGrid');
   if (!revProblems.length) {
     grid.innerHTML = `<div class="empty-state" id="revisitEmpty">
       <div class="empty-ico">✅</div>
       <div class="empty-title">You're all caught up!</div>
-      <div class="empty-sub">No problems flagged for revisit.</div>
+      <div class="empty-sub">No problems are flagged or due for review.</div>
     </div>`;
     return;
   }
@@ -320,17 +551,17 @@ function renderSolTabs() {
   const tabs   = $('#solTabs');
   const panels = $('#solPanels');
   tabs.innerHTML = solutions.map((s, i) => `
-    <button type="button" class="sol-tab${activeSolTab === s.id ? ' active' : ''}" data-sid="${s.id}">
-      ${LANG_LABELS[s.lang] || s.lang}
-      ${solutions.length > 1 ? `<span class="sol-tab-del" data-del="${s.id}" title="Remove">✕</span>` : ''}
+    <button type="button" class="sol-tab${activeSolTab === s.id ? ' active' : ''}" data-sid="${escHtml(s.id)}">
+      ${escHtml(LANG_LABELS[s.lang] || s.lang)}
+      ${solutions.length > 1 ? `<span class="sol-tab-del" data-del="${escHtml(s.id)}" title="Remove">✕</span>` : ''}
     </button>`).join('');
 
   panels.innerHTML = solutions.map(s => `
-    <div class="sol-panel${activeSolTab === s.id ? ' active' : ''}" data-sid="${s.id}">
+    <div class="sol-panel${activeSolTab === s.id ? ' active' : ''}" data-sid="${escHtml(s.id)}">
       <div class="sol-panel-inner">
         <div class="sol-panel-bar">
-          <input type="text" class="sol-name-inp" placeholder="Solution name (e.g. Optimal, Brute Force)" value="${s.name}" data-field="name" data-sid="${s.id}" />
-          <select class="lang-sel" data-field="lang" data-sid="${s.id}">${langOptions(s.lang)}</select>
+          <input type="text" class="sol-name-inp" placeholder="Solution name (e.g. Optimal, Brute Force)" value="${escHtml(s.name)}" data-field="name" data-sid="${escHtml(s.id)}" />
+          <select class="lang-sel" data-field="lang" data-sid="${escHtml(s.id)}">${langOptions(s.lang)}</select>
         </div>
         <textarea class="sol-code-area" spellcheck="false" data-field="code" data-sid="${s.id}" placeholder="// Paste your Java solution here...">${escHtml(s.code)}</textarea>
       </div>
@@ -404,13 +635,14 @@ $$('.star', $('#starRow')).forEach(star => {
 // ── TAG PREVIEW ───────────────────────────────────────────────
 $('#fTags').addEventListener('input', () => {
   const tags = parseTags($('#fTags').value);
-  $('#tagPreview').innerHTML = tags.map(t => `<span class="tag-pill">${t}</span>`).join('');
+  $('#tagPreview').innerHTML = tags.map(t => `<span class="tag-pill">${escHtml(t)}</span>`).join('');
 });
 
 // ── FORM RESET ────────────────────────────────────────────────
 function resetForm() {
   $('#problemForm').reset();
   $('#editId').value = '';
+  $('#fFavorite').checked = false;
   $('#formTitle').textContent = 'Add Problem';
   confidence = 0;
   renderStars();
@@ -444,8 +676,13 @@ $('#problemForm').addEventListener('submit', (e) => {
     solutions:     solutions.map(s => ({ ...s })),
     timeComplexity:  $('#fTime').value.trim(),
     spaceComplexity: $('#fSpace').value.trim(),
+    favorite:      Boolean($('#fFavorite').checked),
     revisit:       $('#fRevisit').checked,
     createdAt:     editId ? (problems.find(p => p.id === editId)?.createdAt || new Date().toISOString()) : new Date().toISOString(),
+    reviewedAt:    editId ? problems.find(p => p.id === editId)?.reviewedAt : new Date().toISOString(),
+    nextReviewDate: editId
+      ? problems.find(p => p.id === editId)?.nextReviewDate
+      : nextReviewDate(parseInt($('#fConf').value, 10) || 0),
     updatedAt:     new Date().toISOString(),
   };
 
@@ -453,7 +690,9 @@ $('#problemForm').addEventListener('submit', (e) => {
     const idx = problems.findIndex(p => p.id === editId);
     if (idx !== -1) problems[idx] = prob;
   } else {
-    problems.unshift(prob);
+    // If favorited/pinned, put at very front
+    if (prob.favorite) problems.unshift(prob);
+    else problems.unshift(prob);
   }
   saveProblems(problems);
   updateSidebarStats();
@@ -480,15 +719,20 @@ function openModal(id) {
   $('#mTitle').textContent = p.title;
   $('#mDiff').textContent  = p.difficulty;
   $('#mDiff').className    = `diff-badge ${p.difficulty}`;
+  $('#mFavBadge').classList.toggle('hidden', !p.favorite);
   $('#mRevisitBadge').classList.toggle('hidden', !p.revisit);
+  $('#mFav').classList.toggle('active', Boolean(p.favorite));
+  $('#mFav').textContent   = p.favorite ? '★ Favorited' : '☆ Favorite';
 
   // Meta
   const metaItems = [
-    p.link ? `<div class="m-meta-item"><span class="m-meta-key">Link</span><a href="${p.link}" target="_blank" rel="noopener">LeetCode ↗</a></div>` : '',
-    p.timeComplexity  ? `<div class="m-meta-item"><span class="m-meta-key">Time</span>${p.timeComplexity}</div>` : '',
-    p.spaceComplexity ? `<div class="m-meta-item"><span class="m-meta-key">Space</span>${p.spaceComplexity}</div>` : '',
+    isHttpUrl(p.link) ? `<div class="m-meta-item"><span class="m-meta-key">Link</span><a href="${escHtml(p.link)}" target="_blank" rel="noopener">LeetCode ↗</a></div>` : '',
+    p.timeComplexity  ? `<div class="m-meta-item"><span class="m-meta-key">Time</span>${escHtml(p.timeComplexity)}</div>` : '',
+    p.spaceComplexity ? `<div class="m-meta-item"><span class="m-meta-key">Space</span>${escHtml(p.spaceComplexity)}</div>` : '',
     p.confidence      ? `<div class="m-meta-item"><span class="m-meta-key">Confidence</span><span style="color:var(--medium)">${starsHTML(p.confidence)}</span></div>` : '',
     `<div class="m-meta-item"><span class="m-meta-key">Added</span>${fmtDate(p.createdAt)}</div>`,
+    p.reviewedAt ? `<div class="m-meta-item"><span class="m-meta-key">Last reviewed</span>${fmtDate(p.reviewedAt)}</div>` : '',
+    p.nextReviewDate ? `<div class="m-meta-item"><span class="m-meta-key">Next review</span>${fmtReviewDate(p.nextReviewDate)}${isReviewDue(p) ? ' · Due' : ''}</div>` : '<div class="m-meta-item"><span class="m-meta-key">Review</span>Not scheduled</div>',
   ].filter(Boolean).join('');
   $('#mMeta').innerHTML = metaItems;
 
@@ -497,7 +741,7 @@ function openModal(id) {
   if (p.tags && p.tags.length) {
     mTagsSec.classList.remove('hidden');
     $('#mTags').innerHTML = p.tags.map(t =>
-      `<span class="tag-pill" style="cursor:pointer" data-tag="${t}">${t}</span>`).join('');
+      `<span class="tag-pill" style="cursor:pointer" data-tag="${escHtml(t)}">${escHtml(t)}</span>`).join('');
     $$('[data-tag]', $('#mTags')).forEach(pill => {
       pill.addEventListener('click', () => {
         activeTagFilter = pill.dataset.tag;
@@ -527,15 +771,15 @@ function openModal(id) {
     const panels = $('#mSolPanels');
     tabs.innerHTML = solns.map((s, i) =>
       `<button type="button" class="m-sol-tab${i === 0 ? ' active' : ''}" data-i="${i}">
-        ${s.name || LANG_LABELS[s.lang] || s.lang}
+        ${escHtml(s.name || LANG_LABELS[s.lang] || s.lang)}
       </button>`).join('');
     panels.innerHTML = solns.map((s, i) =>
       `<div class="m-sol-panel${i === 0 ? ' active' : ''}" data-i="${i}">
         <div class="m-sol-header">
-          <span>${s.name || 'Solution'}</span>
-          <span style="font-family:'JetBrains Mono',monospace">${LANG_LABELS[s.lang] || s.lang}</span>
+          <span>${escHtml(s.name || 'Solution')}</span>
+          <span style="font-family:'JetBrains Mono',monospace">${escHtml(LANG_LABELS[s.lang] || s.lang)}</span>
         </div>
-        <pre><code class="language-${s.lang}">${escHtml(s.code)}</code></pre>
+        <pre><code class="language-${escHtml(s.lang)}">${escHtml(s.code)}</code></pre>
       </div>`).join('');
 
     // Highlight
@@ -571,10 +815,36 @@ $('#mClose').addEventListener('click', closeModal);
 $('#backdrop').addEventListener('click', (e) => { if (e.target === $('#backdrop')) closeModal(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
+$('#mReviewed').addEventListener('click', () => {
+  if (!modalProblemId) return;
+  problems = loadProblems();
+  const problem = problems.find(item => item.id === modalProblemId);
+  if (!problem) return;
+  const now = new Date();
+  problem.reviewedAt = now.toISOString();
+  problem.nextReviewDate = nextReviewDate(problem.confidence || 0, now);
+  problem.revisit = false;
+  problem.updatedAt = now.toISOString();
+  saveProblems(problems);
+  updateSidebarStats();
+  toast(`Review scheduled for ${fmtReviewDate(problem.nextReviewDate)}.`, 'success');
+
+  if (currentView === 'dashboard') renderDashboard();
+  else if (currentView === 'revisit') renderRevisit();
+  else renderProblems();
+  openModal(problem.id);
+});
+
+// Favorite from modal
+$('#mFav').addEventListener('click', () => {
+  if (modalProblemId) toggleFavorite(modalProblemId);
+});
+
 // Edit from modal
 $('#mEdit').addEventListener('click', () => {
+  const id = modalProblemId;
   closeModal();
-  editProblem(modalProblemId || $('#mTitle').textContent);
+  editProblem(id);
 });
 
 // Delete from modal
@@ -607,12 +877,13 @@ function editProblem(id) {
   $('#fNotes').value        = p.notes || '';
   $('#fTime').value         = p.timeComplexity || '';
   $('#fSpace').value        = p.spaceComplexity || '';
+  $('#fFavorite').checked   = Boolean(p.favorite);
   $('#fRevisit').checked    = p.revisit || false;
   confidence = p.confidence || 0;
   renderStars();
 
   // Tag preview
-  $('#tagPreview').innerHTML = (p.tags || []).map(t => `<span class="tag-pill">${t}</span>`).join('');
+  $('#tagPreview').innerHTML = (p.tags || []).map(t => `<span class="tag-pill">${escHtml(t)}</span>`).join('');
 
   // Solutions
   solutions = (p.solutions && p.solutions.length) ?
@@ -630,8 +901,34 @@ function escHtml(str = '') {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// ── THEME SUPPORT (DARK / MOODY SLATE LIGHT) ──────────────────
+const THEME_KEY = 'dsa_vault_theme';
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem(THEME_KEY, theme);
+  const btn = $('#themeToggle');
+  if (btn) {
+    btn.textContent = theme === 'light' ? '☀️' : '🌙';
+    btn.setAttribute('title', theme === 'light' ? 'Switch to Dark mode' : 'Switch to Light mode');
+  }
+}
+
+function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY) || 'dark';
+  setTheme(saved);
+  const btn = $('#themeToggle');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      setTheme(current === 'dark' ? 'light' : 'dark');
+    });
+  }
+}
+
 // ── INIT ──────────────────────────────────────────────────────
 function init() {
+  initTheme();
   updateSidebarStats();
   renderDashboard();
   resetForm(); // creates default Java solution slot
