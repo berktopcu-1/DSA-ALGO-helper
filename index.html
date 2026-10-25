@@ -27,11 +27,14 @@
     <div class="sidebar-header">
       <div class="logo">
         <span class="logo-icon">⚡</span>
-        <div class="logo-text">DSA<span class="logo-accent">Vault</span></div>
+        <div class="logo-text">DSA<span class="logo-accent">Vault</span><span class="logo-badge">Codespaces</span></div>
       </div>
-      <button class="hamburger" id="sidebarToggle" aria-label="Toggle sidebar">
-        <span></span><span></span><span></span>
-      </button>
+      <div class="header-actions">
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Switch light/dark theme">🌙</button>
+        <button class="hamburger" id="sidebarToggle" aria-label="Toggle sidebar">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
     </div>
 
     <nav class="sidebar-nav">
@@ -68,6 +71,11 @@
           <span class="stat-lbl">Hard</span>
         </div>
       </div>
+      <div class="backup-actions">
+        <button type="button" class="btn-ghost small" id="exportBackup" title="Download your problems as a JSON backup">Export backup</button>
+        <button type="button" class="btn-ghost small" id="importBackup" title="Merge problems from a JSON backup">Import backup</button>
+        <input type="file" id="backupFile" accept="application/json,.json" hidden />
+      </div>
     </div>
   </aside>
 
@@ -76,12 +84,19 @@
 
     <!-- ── DASHBOARD ── -->
     <section class="view active" id="viewDashboard">
+      <div class="codespaces-hero-badge">
+        <span class="badge-dot"></span>
+        <span>Codespaces Cloud Engine · Instant DSA Workspaces</span>
+      </div>
       <div class="page-header">
         <div>
-          <h1 class="page-title">Dashboard</h1>
-          <p class="page-sub">Your DSA journey at a glance</p>
+          <h1 class="page-title">Cloud Dashboard</h1>
+          <p class="page-sub">Your personal algorithm environment native to GitHub</p>
         </div>
-        <button class="btn-primary pulse-btn" data-view="add" id="quickAddBtn">+ Add Problem</button>
+        <div class="dashboard-actions">
+          <button class="btn-ghost" type="button" id="randomPracticeBtn">🎯 Random unsolved</button>
+          <button class="btn-primary" data-view="add" id="quickAddBtn">+ Add Problem</button>
+        </div>
       </div>
 
       <div class="stats-grid">
@@ -118,15 +133,39 @@
         <div class="stat-card glass week-glow">
           <div class="stat-card-icon">🔥</div>
           <div class="stat-card-val" id="dashWeek">0</div>
-          <div class="stat-card-lbl">This Week</div>
+          <div class="stat-card-lbl">Added in last 7 days</div>
           <div class="stat-card-bar"><div class="stat-bar-fill week-fill" id="dashWeekBar"></div></div>
+        </div>
+        <div class="stat-card glass revisit-glow">
+          <div class="stat-card-icon">⏰</div>
+          <div class="stat-card-val" id="dashDue">0</div>
+          <div class="stat-card-lbl">Due for Review</div>
+          <div class="stat-card-bar"><div class="stat-bar-fill revisit-fill" id="dashDueBar"></div></div>
         </div>
       </div>
 
+      <section class="study-goal glass" aria-labelledby="studyGoalTitle">
+        <div class="study-goal-header">
+          <div>
+            <h2 class="section-title" id="studyGoalTitle">Weekly practice goal</h2>
+            <p class="muted">Track distinct problems you review this week.</p>
+          </div>
+          <form class="goal-form" id="goalForm">
+            <label class="sr-only" for="weeklyGoalInput">Problems per week goal</label>
+            <input id="weeklyGoalInput" class="finput" type="number" min="1" max="100" step="1" value="5" />
+            <button class="btn-ghost small" type="submit">Set goal</button>
+          </form>
+        </div>
+        <div class="goal-progress-track" role="progressbar" id="goalProgress" aria-label="Weekly practice goal progress" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0">
+          <div class="goal-progress-fill" id="goalProgressFill"></div>
+        </div>
+        <p class="goal-progress-copy" id="goalProgressCopy">0 of 5 problems reviewed this week</p>
+      </section>
+
       <div class="section-hdr">
-        <h2 class="section-title">Tag Distribution</h2>
+        <h2 class="section-title">Topic Coverage</h2>
       </div>
-      <div class="tag-cloud" id="tagCloud">
+      <div class="topic-coverage" id="tagCloud">
         <p class="muted">No tags yet — add some problems!</p>
       </div>
 
@@ -153,10 +192,12 @@
         <div class="search-wrap">
           <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" class="search-input" id="searchInput" placeholder="Search by title, tag, or LC number…" />
+          <kbd class="search-kbd">/</kbd>
           <button class="clear-btn hidden" id="clearSearch">✕</button>
         </div>
         <div class="diff-chips">
           <button class="chip active" data-diff="all">All</button>
+          <button class="chip fav-chip" data-diff="fav">⭐ Starred</button>
           <button class="chip easy" data-diff="Easy">Easy</button>
           <button class="chip medium" data-diff="Medium">Medium</button>
           <button class="chip hard" data-diff="Hard">Hard</button>
@@ -256,7 +297,7 @@
           <div class="sol-panels" id="solPanels"></div>
         </div>
 
-        <!-- Complexity + Revisit -->
+        <!-- Complexity + Revisit + Favorite -->
         <div class="form-row">
           <div class="form-group">
             <label class="lbl" for="fTime">Time Complexity</label>
@@ -265,6 +306,14 @@
           <div class="form-group">
             <label class="lbl" for="fSpace">Space Complexity</label>
             <input type="text" class="finput" id="fSpace" placeholder="O(n)" />
+          </div>
+          <div class="form-group center-v">
+            <label class="lbl">Favorite / Pin</label>
+            <label class="toggle">
+              <input type="checkbox" id="fFavorite" />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-txt">⭐ Pin to top</span>
+            </label>
           </div>
           <div class="form-group center-v">
             <label class="lbl">Flag for Revisit</label>
@@ -290,7 +339,7 @@
       <div class="page-header">
         <div>
           <h1 class="page-title">Revisit List</h1>
-          <p class="page-sub">Problems flagged for another look</p>
+          <p class="page-sub">Flagged problems and reviews that are due</p>
         </div>
       </div>
       <div class="card-grid" id="revisitGrid">
@@ -311,10 +360,14 @@
         <div class="modal-title-row">
           <span class="modal-num" id="mNum"></span>
           <h2 class="modal-title" id="mTitle"></h2>
+          <span class="fav-badge hidden" id="mFavBadge">⭐ Pinned</span>
           <span class="diff-badge" id="mDiff"></span>
           <span class="revisit-badge hidden" id="mRevisitBadge">🔁 Revisit</span>
         </div>
         <div class="modal-btns">
+          <button class="btn-ghost small" id="mPractice" type="button" aria-pressed="false">🎯 Practice mode</button>
+          <button class="btn-primary small" id="mReviewed">✓ Mark reviewed</button>
+          <button class="btn-ghost small modal-fav-btn" id="mFav">⭐ Favorite</button>
           <button class="btn-ghost small" id="mEdit">✏️ Edit</button>
           <button class="btn-danger small" id="mDelete">🗑️ Delete</button>
           <button class="modal-x" id="mClose" aria-label="Close">✕</button>
@@ -333,23 +386,69 @@
 
         <!-- Notes -->
         <div class="m-section" id="mNotesSec">
-          <div class="m-sec-title">My Approach</div>
+          <div class="m-section-hdr">
+            <div class="m-sec-title">My Approach</div>
+            <button class="btn-ghost small practice-reveal hidden" id="mRevealNotes" type="button">Reveal notes</button>
+          </div>
           <div class="m-notes" id="mNotes"></div>
         </div>
 
         <!-- Solutions -->
         <div class="m-section" id="mSolSec">
-          <div class="m-sec-title">Solutions</div>
+          <div class="m-section-hdr">
+            <div class="m-sec-title">Solutions</div>
+            <button class="btn-ghost small practice-reveal hidden" id="mRevealSolutions" type="button">Reveal solutions</button>
+          </div>
           <div class="m-sol-tabs" id="mSolTabs"></div>
           <div class="m-sol-panels" id="mSolPanels"></div>
         </div>
+
+        <div class="m-section" id="mHistorySec">
+          <div class="m-sec-title">Review history</div>
+          <div class="review-history" id="mHistory"></div>
+        </div>
+        <label class="review-confidence" for="mReviewConfidence">
+          Confidence after review
+          <select id="mReviewConfidence" class="finput">
+            <option value="current">Keep current rating</option>
+            <option value="1">1 — Need more practice</option>
+            <option value="2">2 — Still unsure</option>
+            <option value="3">3 — Getting there</option>
+            <option value="4">4 — Confident</option>
+            <option value="5">5 — Can solve independently</option>
+          </select>
+        </label>
       </div>
     </div>
+  </div>
+
+  <div class="backdrop hidden" id="challengeBackdrop">
+    <section class="modal challenge-modal" role="dialog" aria-modal="true" aria-labelledby="challengeTitle">
+      <div class="modal-hdr">
+        <div>
+          <h2 class="modal-title" id="challengeTitle">Random unsolved LeetCode</h2>
+          <p class="page-sub">Pick a number from 1–4,086 that isn't in your solved list.</p>
+        </div>
+        <button class="modal-x" id="challengeClose" aria-label="Close">✕</button>
+      </div>
+      <div class="challenge-body">
+        <div class="challenge-number" id="challengeNumber">#—</div>
+        <a class="btn-ghost" id="challengeLink" href="https://leetcode.com/problemset/" target="_blank" rel="noopener">Open LeetCode problemset ↗</a>
+        <p class="muted">Search the number on LeetCode. When you finish it, mark it done so it won't be picked again.</p>
+        <p class="challenge-complete hidden" id="challengeComplete">✓ This number is saved as completed.</p>
+        <div class="challenge-actions">
+          <button class="btn-ghost" type="button" id="challengeAnother">Pick another</button>
+          <button class="btn-ghost hidden" type="button" id="challengeAddDetails">Add details to vault</button>
+          <button class="btn-primary" type="button" id="challengeMarkDone">✓ Mark as done</button>
+        </div>
+      </div>
+    </section>
   </div>
 
   <!-- Toasts -->
   <div class="toasts" id="toasts"></div>
 
+  <script src="seed_data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
